@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>星みくじ - Celestial Star Mikuji</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+  <!-- Babel (JSX compiler for in-browser usage) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/lucide-react@latest"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;500;700&family=Cinzel:wght@400;600;700&display=swap');
+
+    body {
+      font-family: 'Shippori Mincho', serif;
+      background-color: #030712;
+      color: #f3f4f6;
+      overflow-x: hidden;
+    }
+
+    .font-cinzel {
+      font-family: 'Cinzel', serif;
+    }
+
+    /* Custom Animations */
+    @keyframes spinSlow {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes reverseSpin {
+      from { transform: rotate(360deg); }
+      to { transform: rotate(0deg); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .animate-spin-slow {
+      animation: spinSlow 25s linear infinite;
+    }
+    .animate-reverse-spin {
+      animation: reverseSpin 35s linear infinite;
+    }
+    .animate-fade-in {
+      animation: fadeIn 0.6s ease-out forwards;
+    }
+
+    /* Custom Scrollbar for Modal */
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(217, 119, 6, 0.4);
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: rgba(217, 119, 6, 0.7);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    
+    // Lucide Icons components from lucideReact global object
+    const { 
+      Sparkles, Moon, Sun, Compass, Heart, Briefcase, Coins, 
+      Bookmark, Share2, RotateCcw, Volume2, VolumeX, History, 
+      Star, Check, ChevronRight, Info, X 
+    } = lucideReact;
+
+    // --- Web Audio API Sound Generator ---
+    class SoundManager {
+      constructor() {
+        this.ctx = null;
+        this.enabled = true;
+      }
+
+      init() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            this.ctx = new AudioCtx();
+          }
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+
+      playTwinkle() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+
+        const now = this.ctx.currentTime;
+        const freqs = [523.25, 659.25, 783.99, 1046.50, 1318.51];
+        
+        freqs.forEach((f, index) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(f, now + index * 0.08);
+
+          gain.gain.setValueAtTime(0.001, now + index * 0.08);
+          gain.gain.exponentialRampToValueAtTime(0.12, now + index * 0.08 + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + index * 0.08 + 0.5);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc.start(now + index * 0.08);
+          osc.stop(now + index * 0.08 + 0.6);
+        });
+      }
+
+      playDrawSound() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+
+        const now = this.ctx.currentTime;
+        for (let i = 0; i < 10; i++) {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+
+          const freq = 350 + Math.random() * 700 + i * 70;
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now + i * 0.09);
+
+          gain.gain.setValueAtTime(0.001, now + i * 0.09);
+          gain.gain.linearRampToValueAtTime(0.06, now + i * 0.09 + 0.04);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.35);
+
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+
+          osc.start(now + i * 0.09);
+          osc.stop(now + i * 0.09 + 0.4);
+        }
+      }
+
+      playReveal() {
+        if (!this.enabled) return;
+        this.init();
+        if (!this.ctx) return;
+
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(261.63, now);
+        osc.frequency.exponentialRampToValueAtTime(1046.50, now + 1.2);
+
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(0.2, now + 0.8);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now);
+        osc.stop(now + 1.6);
+      }
+    }
+
+    const sounds = new SoundManager();
+
+    // --- Data Pools ---
+    const ZODIAC_SIGNS = [
+      { id: 'aries', name: '牡羊座', symbol: '♈', period: '3/21 - 4/19', element: '火' },
+      { id: 'taurus', name: '牡牛座', symbol: '♉', period: '4/20 - 5/20', element: '地' },
+      { id: 'gemini', name: '双子座', symbol: '♊', period: '5/21 - 6/21', element: '風' },
+      { id: 'cancer', name: '蟹座', symbol: '♋', period: '6/22 - 7/22', element: '水' },
+      { id: 'leo', name: '獅子座', symbol: '♌', period: '7/23 - 8/22', element: '火' },
+      { id: 'virgo', name: '乙女座', symbol: '♍', period: '8/23 - 9/22', element: '地' },
+      { id: 'libra', name: '天秤座', symbol: '♎', period: '9/23 - 10/23', element: '風' },
+      { id: 'scorpio', name: '蠍座', symbol: '♏', period: '10/24 - 11/22', element: '水' },
+      { id: 'sagittarius', name: '射手座', symbol: '♐', period: '11/23 - 12/21', element: '火' },
+      { id: 'capricorn', name: '山羊座', symbol: '♑', period: '12/22 - 1/19', element: '地' },
+      { id: 'aquarius', name: '水瓶座', symbol: '♒', period: '1/20 - 2/18', element: '風' },
+      { id: 'pisces', name: '魚座', symbol: '♓', period: '2/19 - 3/20', element: '水' },
+    ];
+
+    const FORTUNE_LEVELS = [
+      { title: '極光極星吉', color: 'from-amber-300 via-yellow-200 to-amber-400', badge: '★★★★★★', rarity: '奇跡のような祝福の星回り' },
+      { title: '彗星大吉', color: 'from-purple-300 via-pink-200 to-indigo-300', badge: '★★★★★', rarity: '輝かしい飛躍とインスピレーション' },
+      { title: '月華星吉', color: 'from-blue-200 via-indigo-200 to-cyan-300', badge: '★★★★☆', rarity: '静かな調和と豊かな直感' },
+      { title: '明星中吉', color: 'from-amber-200 via-orange-200 to-yellow-300', badge: '★★★☆☆', rarity: '着実な前進と新たな芽生え' },
+      { title: '流星吉', color: 'from-emerald-200 via-teal-200 to-cyan-200', badge: '★★★☆☆', rarity: '予期せぬ嬉しいめぐり合わせ' },
+      { title: '瞬き小吉', color: 'from-slate-200 via-indigo-100 to-purple-200', badge: '★★☆☆☆', rarity: '自分を見つめ直す静謐な時間' },
+    ];
+
+    const MESSAGES = [
+      "夜空の彼方から届く光は、あなたの内なる願いの萌芽です。今日は直感に従うことで、道が美しく拓けます。",
+      "星座が紡ぐ静かな調和があなたを守護しています。焦らず自分のペースを保つことで、大きな安らぎが訪れます。",
+      "彗星のように閃くひらめきを大切にしてください。ふと思いついたアイデアが未来の扉を開くキーとなります。",
+      "月光の輝きがあなたの情熱を温かく照らしています。周囲への気遣いがめぐり巡って幸福として返ってくるでしょう。",
+      "星々は挑戦するものを優しく見守っています。過去を振り返らず、前を見つめて新しい一歩を踏み出しましょう。"
+    ];
+
+    const LOVE_ADVICES = [
+      "金星の導きにより、素直な笑顔が相手の心を強く引き寄せます。",
+      "言葉よりも温かな眼差しや小さな気遣いが、深い絆を育む鍵となります。",
+      "一人の時間を愛おしむことが、素敵な出会いを手繰り寄せます。"
+    ];
+
+    const WORK_ADVICES = [
+      "水星の知恵が冴え渡り、複雑な課題も鮮やかに解決へと導けるでしょう。",
+      "周囲の意見に耳を傾けることで視野が深まり、新たな協力関係が生まれます。",
+      "新しい分野に触れるのに最適な時。知性を刺激することが飛躍に繋がります。"
+    ];
+
+    const MONEY_ADVICES = [
+      "木星の豊かさが巡っています。自分を高める自己投資には強い追い風が吹きます。",
+      "手放すことが幸運を呼び込みます。不要なものの整理整頓が運気アップの近道。",
+      "直感での散財を避け、長く愛せる「本物」を選ぶことで運気が安定します。"
+    ];
+
+    const LUCKY_ITEMS = ["銀のアクセサリー", "ハーブティー", "星モチーフのノート", "クリスタル", "ミントのアロマ"];
+    const LUCKY_COLORS = ["スターダストゴールド", "ミッドナイトブルー", "ルナシルバー", "ヴェールピンク", "オーロラグリーン"];
+
+    // --- Main App Component ---
+    function App() {
+      const [selectedZodiac, setSelectedZodiac] = useState(null);
+      const [stage, setStage] = useState('landing');
+      const [currentFortune, setCurrentFortune] = useState(null);
+      const [history, setHistory] = useState([]);
+      const [showHistory, setShowHistory] = useState(false);
+      const [showGuide, setShowGuide] = useState(false);
+      const [soundEnabled, setSoundEnabled] = useState(true);
+      const [copied, setCopied] = useState(false);
+      const [saved, setSaved] = useState(false);
+
+      const canvasRef = useRef(null);
+      const mousePos = useRef({ x: -100, y: -100 });
+
+      // LocalStorage Load
+      useEffect(() => {
+        try {
+          const savedHistory = localStorage.getItem('hoshi_mikuji_history');
+          if (savedHistory) setHistory(JSON.parse(savedHistory));
+        } catch (e) {
+          console.error(e);
+        }
+      }, []);
+
+      // Canvas Background Animation with Interactive Stars
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        let animationFrameId;
+
+        let width = (canvas.width = window.innerWidth);
+        let height = (canvas.height = window.innerHeight);
+
+        const handleResize = () => {
+          width = canvas.width = window.innerWidth;
+          height = canvas.height = window.innerHeight;
+        };
+
+        const handleMouseMove = (e) => {
+          mousePos.current = { x: e.clientX, y: e.clientY };
+        };
+
+        window.addEventListener('resize', handleResize);
+        window.addEventListener('mousemove', handleMouseMove);
+
+        const stars = Array.from({ length: 160 }, () => ({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          baseRadius: Math.random() * 1.5 + 0.5,
+          radius: Math.random() * 1.5 + 0.5,
+          alpha: Math.random(),
+          speed: Math.random() * 0.015 + 0.005,
+        }));
+
+        const shootingStars = [];
+        const createShootingStar = () => {
+          if (Math.random() < 0.025 && shootingStars.length < 3) {
+            shootingStars.push({
+              x: Math.random() * width,
+              y: Math.random() * (height / 2),
+              length: Math.random() * 90 + 40,
+              speed: Math.random() * 7 + 4,
+              angle: 45 * (Math.PI / 180),
+              alpha: 1,
+            });
+          }
+        };
+
+        const render = () => {
+          ctx.clearRect(0, 0, width, height);
+
+          // Render Interactive Stars
+          stars.forEach((star) => {
+            star.alpha += star.speed;
+            if (star.alpha > 1 || star.alpha < 0) star.speed = -star.speed;
+
+            // Mouse Proximity Effect
+            const dx = mousePos.current.x - star.x;
+            const dy = mousePos.current.y - star.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (dist < 100) {
+              star.radius = star.baseRadius + (100 - dist) * 0.03;
+            } else {
+              star.radius = star.baseRadius;
+            }
+
+            ctx.beginPath();
+            ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255, 255, 245, ${Math.abs(star.alpha)})`;
+            ctx.shadowBlur = star.radius * 2.5;
+            ctx.shadowColor = '#ffffff';
+            ctx.fill();
+          });
+
+          // Render Shooting Stars
+          createShootingStar();
+          for (let i = shootingStars.length - 1; i >= 0; i--) {
+            const s = shootingStars[i];
+            const endX = s.x + Math.cos(s.angle) * s.length;
+            const endY = s.y + Math.sin(s.angle) * s.length;
+
+            const grad = ctx.createLinearGradient(s.x, s.y, endX, endY);
+            grad.addColorStop(0, `rgba(255, 255, 255, ${s.alpha})`);
+            grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+            ctx.beginPath();
+            ctx.moveTo(s.x, s.y);
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = grad;
+            ctx.lineWidth = 1.8;
+            ctx.stroke();
+
+            s.x += Math.cos(s.angle) * s.speed;
+            s.y += Math.sin(s.angle) * s.speed;
+            s.alpha -= 0.015;
+
+            if (s.alpha <= 0) shootingStars.splice(i, 1);
+          }
+
+          animationFrameId = requestAnimationFrame(render);
+        };
+
+        render();
+
+        return () => {
+          window.removeEventListener('resize', handleResize);
+          window.removeEventListener('mousemove', handleMouseMove);
+          cancelAnimationFrame(animationFrameId);
+        };
+      }, []);
+
+      const drawFortune = () => {
+        sounds.playDrawSound();
+        setStage('drawing');
+        setSaved(false);
+
+        setTimeout(() => {
+          sounds.playReveal();
+          const level = FORTUNE_LEVELS[Math.floor(Math.random() * FORTUNE_LEVELS.length)];
+          const message = MESSAGES[Math.floor(Math.random() * MESSAGES.length)];
+          const love = LOVE_ADVICES[Math.floor(Math.random() * LOVE_ADVICES.length)];
+          const work = WORK_ADVICES[Math.floor(Math.random() * WORK_ADVICES.length)];
+          const money = MONEY_ADVICES[Math.floor(Math.random() * MONEY_ADVICES.length)];
+          const item = LUCKY_ITEMS[Math.floor(Math.random() * LUCKY_ITEMS.length)];
+          const color = LUCKY_COLORS[Math.floor(Math.random() * LUCKY_COLORS.length)];
+          
+          const otherSigns = ZODIAC_SIGNS.filter(z => !selectedZodiac || z.id !== selectedZodiac.id);
+          const luckySign = otherSigns[Math.floor(Math.random() * otherSigns.length)];
+
+          const result = {
+            id: Date.now(),
+            date: new Date().toLocaleDateString('ja-JP', { month: 'short', day: 'numeric', weekday: 'short' }),
+            zodiac: selectedZodiac ? selectedZodiac.name : '全天の星々',
+            level,
+            message,
+            love,
+            work,
+            money,
+            luckySign: luckySign.name + ' (' + luckySign.symbol + ')',
+            item,
+            color
+          };
+
+          setCurrentFortune(result);
+          setStage('result');
+        }, 2600);
+      };
+
+      const saveToHistory = () => {
+        if (!currentFortune || saved) return;
+        const newHistory = [currentFortune, ...history.filter(h => h.id !== currentFortune.id)].slice(0, 20);
+        setHistory(newHistory);
+        try {
+          localStorage.setItem('hoshi_mikuji_history', JSON.stringify(newHistory));
+          setSaved(true);
+          sounds.playTwinkle();
+        } catch (e) {
+          console.error(e);
+        }
+      };
+
+      const shareResult = () => {
+        if (!currentFortune) return;
+        const text = `【星みくじ】今日の運勢は《${currentFortune.level.title}》💫\n「${currentFortune.message}」\nラッキーアイテム: ${currentFortune.item}\n#星みくじ #CelestialMikuji`;
+        
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(text);
+          setCopied(true);
+          sounds.playTwinkle();
+          setTimeout(() => setCopied(false), 2500);
+        }
+      };
+
+      return (
+        <div className="relative min-h-screen text-slate-100 selection:bg-indigo-500 selection:text-white">
+          {/* Canvas Background */}
+          <canvas ref={canvasRef} className="fixed inset-0 pointer-events-none z-0" />
+
+          {/* Ambient Nebulae */}
+          <div className="fixed -top-40 -left-40 w-96 h-96 bg-purple-900/25 rounded-full blur-3xl pointer-events-none z-0" />
+          <div className="fixed bottom-0 right-0 w-[500px] h-[500px] bg-indigo-900/20 rounded-full blur-3xl pointer-events-none z-0" />
+
+          {/* Header */}
+          <header className="relative z-10 flex items-center justify-between px-6 py-4 max-w-5xl mx-auto border-b border-slate-800/60 backdrop-blur-md">
+            <div 
+              onClick={() => { setStage('landing'); sounds.playTwinkle(); }}
+              className="flex items-center gap-2 cursor-pointer group"
+            >
+              <Moon className="w-6 h-6 text-amber-300 transform group-hover:rotate-12 transition-transform duration-300" />
+              <span className="text-xl font-serif tracking-widest bg-clip-text text-transparent bg-gradient-to-r from-amber-200 via-purple-200 to-cyan-200 font-bold">
+                星みくじ
+              </span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  const nextState = !soundEnabled;
+                  setSoundEnabled(nextState);
+                  sounds.enabled = nextState;
+                  if (nextState) sounds.playTwinkle();
+                }}
+                className="p-2 rounded-full bg-slate-900/80 border border-slate-700/60 text-slate-300 hover:text-amber-300 hover:border-amber-400/50 transition-all duration-300"
+                title={soundEnabled ? "音声をオフ" : "音声をオン"}
+              >
+                {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4 text-slate-500" />}
+              </button>
+
+              <button
+                onClick={() => { setShowGuide(true); sounds.playTwinkle(); }}
+                className="p-2 rounded-full bg-slate-900/80 border border-slate-700/60 text-slate-300 hover:text-cyan-300 hover:border-cyan-400/50 transition-all duration-300"
+                title="星座一覧"
+              >
+                <Info className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => { setShowHistory(true); sounds.playTwinkle(); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-700/60 text-xs text-slate-300 hover:text-amber-300 hover:border-amber-400/50 transition-all duration-300"
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>履歴</span>
+                {history.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.2 text-[10px] bg-amber-400/20 text-amber-300 rounded-full border border-amber-400/30">
+                    {history.length}
+                  </span>
+                )}
+              </button>
+            </div>
+          </header>
+
+          {/* Main Container */}
+          <main className="relative z-10 max-w-4xl mx-auto px-4 py-8 flex flex-col items-center min-h-[calc(100vh-80px)] justify-center">
+
+            {/* --- LANDING STAGE --- */}
+            {stage === 'landing' && (
+              <div className="w-full flex flex-col items-center text-center space-y-8 animate-fade-in">
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-950/60 border border-indigo-500/30 text-indigo-200 text-xs tracking-wider backdrop-blur-md">
+                  <Compass className="w-3.5 h-3.5 text-amber-300 animate-spin-slow" />
+                  <span>星々が彩る今日のあなたの運勢</span>
+                </div>
+
+                <h1 className="text-3xl md:text-5xl font-serif tracking-widest text-transparent bg-clip-text bg-gradient-to-b from-amber-100 via-slate-100 to-indigo-200 leading-tight">
+                  夜空のメッセージに<br className="md:hidden" />耳を澄ませて
+                </h1>
+
+                <p className="max-w-lg text-sm md:text-base text-slate-400 font-light leading-relaxed">
+                  星座を選択して、夜空に浮かぶあなただけの星みくじを開きましょう。
+                </p>
+
+                {/* Crystal Orb Trigger */}
+                <div className="relative py-4 group cursor-pointer" onClick={drawFortune}>
+                  <div className="absolute inset-0 rounded-full bg-gradient-to-r from-amber-500/20 via-purple-500/20 to-cyan-500/20 blur-xl group-hover:blur-2xl transition-all duration-500 scale-125" />
+                  <div className="relative w-44 h-44 md:w-52 md:h-52 rounded-full border border-amber-300/40 bg-gradient-to-b from-slate-900/90 via-indigo-950/80 to-slate-950 backdrop-blur-xl flex flex-col items-center justify-center shadow-2xl group-hover:border-amber-300/80 group-hover:scale-105 transition-all duration-500">
+                    <div className="absolute inset-2 rounded-full border border-dashed border-indigo-400/30 animate-spin-slow" />
+                    <Sparkles className="w-12 h-12 text-amber-300 mb-2 transform group-hover:scale-110 group-hover:rotate-12 transition-all duration-300" />
+                    <span className="text-xs tracking-widest font-serif text-amber-200/90">
+                      タップして運勢を占う
+                    </span>
+                  </div>
+                </div>
+
+                {/* Zodiac Selection Grid */}
+                <div className="w-full max-w-2xl bg-slate-900/40 border border-slate-800/80 rounded-2xl p-5 backdrop-blur-md shadow-xl">
+                  <div className="flex items-center justify-between mb-4 px-1">
+                    <span className="text-xs tracking-wider text-slate-400 font-serif flex items-center gap-1.5">
+                      <Star className="w-3.5 h-3.5 text-amber-400" />
+                      自分の星座を選択（任意）
+                    </span>
+                    {selectedZodiac && (
+                      <button 
+                        onClick={() => setSelectedZodiac(null)}
+                        className="text-[11px] text-amber-400/80 hover:text-amber-300 underline"
+                      >
+                        選択解除
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                    {ZODIAC_SIGNS.map((zodiac) => {
+                      const isSelected = selectedZodiac?.id === zodiac.id;
+                      return (
+                        <button
+                          key={zodiac.id}
+                          onClick={() => {
+                            sounds.playTwinkle();
+                            setSelectedZodiac(isSelected ? null : zodiac);
+                          }}
+                          className={`flex flex-col items-center justify-center p-2.5 rounded-xl border transition-all duration-300 ${
+                            isSelected
+                              ? 'bg-gradient-to-b from-indigo-900/80 to-purple-950/80 border-amber-400/80 shadow-lg scale-105'
+                              : 'bg-slate-950/50 border-slate-800/80 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                          }`}
+                        >
+                          <span className="text-lg mb-0.5">{zodiac.symbol}</span>
+                          <span className={`text-xs font-serif ${isSelected ? 'text-amber-200 font-medium' : 'text-slate-300'}`}>
+                            {zodiac.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Draw Button */}
+                <button
+                  onClick={drawFortune}
+                  className="px-8 py-3.5 rounded-full bg-gradient-to-r from-amber-400 via-amber-300 to-yellow-500 text-slate-950 font-serif font-bold text-base tracking-widest shadow-lg shadow-amber-400/20 hover:shadow-amber-400/40 hover:scale-105 transition-all duration-300 flex items-center gap-2"
+                >
+                  <Sparkles className="w-4 h-4 fill-slate-950" />
+                  {selectedZodiac ? `${selectedZodiac.name}の星運を聞く` : '星みくじを引く'}
+                </button>
+              </div>
+            )}
+
+            {/* --- DRAWING ANIMATION STAGE --- */}
+            {stage === 'drawing' && (
+              <div className="flex flex-col items-center justify-center space-y-8 py-16 animate-fade-in">
+                <div className="relative w-48 h-48 flex items-center justify-center">
+                  <div className="absolute inset-0 rounded-full border-2 border-dashed border-amber-300/40 animate-spin-slow" />
+                  <div className="w-32 h-32 rounded-full bg-gradient-to-tr from-indigo-600 via-purple-500 to-amber-300 animate-pulse flex items-center justify-center shadow-2xl shadow-amber-300/50">
+                    <Sparkles className="w-14 h-14 text-white animate-spin-slow" />
+                  </div>
+                </div>
+
+                <div className="text-center space-y-2">
+                  <p className="text-xl font-serif text-amber-200 tracking-widest animate-pulse">
+                    天体の配置を読み解いています...
+                  </p>
+                  <p className="text-xs text-slate-400 font-mono">
+                    {selectedZodiac ? `${selectedZodiac.name} の星座波動を同期中` : '全天88星座の波動を同期中'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* --- RESULT STAGE --- */}
+            {stage === 'result' && currentFortune && (
+              <div className="w-full max-w-2xl space-y-6 animate-fade-in">
+                <div className="relative rounded-3xl border border-amber-300/40 bg-slate-900/80 backdrop-blur-xl p-6 md:p-8 shadow-2xl overflow-hidden">
+                  {/* Decorative Accents */}
+                  <div className="absolute top-3 left-3 w-4 h-4 border-t-2 border-l-2 border-amber-400/60" />
+                  <div className="absolute top-3 right-3 w-4 h-4 border-t-2 border-r-2 border-amber-400/60" />
+                  <div className="absolute bottom-3 left-3 w-4 h-4 border-b-2 border-l-2 border-amber-400/60" />
+                  <div className="absolute bottom-3 right-3 w-4 h-4 border-b-2 border-r-2 border-amber-400/60" />
+
+                  {/* Date & Zodiac Meta */}
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-4 mb-6 text-xs text-slate-400">
+                    <span className="flex items-center gap-1.5 font-mono">
+                      <Moon className="w-3.5 h-3.5 text-amber-300" />
+                      {currentFortune.date} の託宣
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full bg-slate-800/80 border border-slate-700 text-amber-200 font-serif">
+                      {currentFortune.zodiac}
+                    </span>
+                  </div>
+
+                  {/* Fortune Header */}
+                  <div className="text-center space-y-3 mb-8">
+                    <span className="text-xs tracking-widest text-slate-400 uppercase">
+                      {currentFortune.level.rarity}
+                    </span>
+
+                    <h2 className={`text-4xl md:text-5xl font-serif font-extrabold tracking-widest bg-clip-text text-transparent bg-gradient-to-r ${currentFortune.level.color} drop-shadow-md py-1`}>
+                      {currentFortune.level.title}
+                    </h2>
+
+                    <div className="text-amber-300 text-sm tracking-widest">
+                      {currentFortune.level.badge}
+                    </div>
+                  </div>
+
+                  {/* Core Message */}
+                  <div className="relative bg-indigo-950/40 border border-indigo-500/20 rounded-2xl p-5 mb-8 text-center">
+                    <Sparkles className="w-5 h-5 text-amber-300/60 absolute -top-2.5 left-1/2 transform -translate-x-1/2 bg-slate-900 px-1" />
+                    <p className="text-sm md:text-base text-slate-200 font-serif leading-relaxed italic">
+                      「 {currentFortune.message} 」
+                    </p>
+                  </div>
+
+                  {/* Detailed Life Categories */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                    <div className="bg-slate-950/60 border border-pink-500/20 rounded-2xl p-4 flex flex-col space-y-2">
+                      <div className="flex items-center gap-2 text-pink-300 font-serif text-sm border-b border-pink-500/20 pb-2">
+                        <Heart className="w-4 h-4" />
+                        <span>恋愛運</span>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed font-light">
+                        {currentFortune.love}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950/60 border border-cyan-500/20 rounded-2xl p-4 flex flex-col space-y-2">
+                      <div className="flex items-center gap-2 text-cyan-300 font-serif text-sm border-b border-cyan-500/20 pb-2">
+                        <Briefcase className="w-4 h-4" />
+                        <span>仕事・学業</span>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed font-light">
+                        {currentFortune.work}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950/60 border border-amber-500/20 rounded-2xl p-4 flex flex-col space-y-2">
+                      <div className="flex items-center gap-2 text-amber-300 font-serif text-sm border-b border-amber-500/20 pb-2">
+                        <Coins className="w-4 h-4" />
+                        <span>金運</span>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed font-light">
+                        {currentFortune.money}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Lucky Elements */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 border-t border-slate-800/80 pt-6">
+                    <div className="flex items-center justify-between bg-slate-950/40 rounded-xl p-3 border border-slate-800">
+                      <span className="text-xs text-slate-400 font-serif">導きの星座</span>
+                      <span className="text-xs text-amber-200 font-medium">{currentFortune.luckySign}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between bg-slate-950/40 rounded-xl p-3 border border-slate-800">
+                      <span className="text-xs text-slate-400 font-serif">ラッキーアイテム</span>
+                      <span className="text-xs text-cyan-200 font-medium">{currentFortune.item}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between bg-slate-950/40 rounded-xl p-3 border border-slate-800">
+                      <span className="text-xs text-slate-400 font-serif">ラッキーカラー</span>
+                      <span className="text-xs text-purple-200 font-medium">{currentFortune.color}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                  <button
+                    onClick={drawFortune}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-slate-900 border border-slate-700 text-slate-200 hover:border-amber-400 hover:text-amber-300 text-xs font-serif transition-all duration-300"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>もう一度引く</span>
+                  </button>
+
+                  <button
+                    onClick={saveToHistory}
+                    disabled={saved}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-full border text-xs font-serif transition-all duration-300 ${
+                      saved
+                        ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300 cursor-default'
+                        : 'bg-indigo-950/60 border-indigo-500/40 text-indigo-200 hover:bg-indigo-900/60 hover:border-indigo-400'
+                    }`}
+                  >
+                    {saved ? <Check className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
+                    <span>{saved ? '保存済み' : '結果を保存'}</span>
+                  </button>
+
+                  <button
+                    onClick={shareResult}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 text-xs font-serif font-bold transition-all duration-300 hover:scale-105"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5" /> : <Share2 className="w-3.5 h-3.5" />}
+                    <span>{copied ? 'コピー完了！' : '結果をシェア'}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </main>
+
+          {/* HISTORY MODAL */}
+          {showHistory && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+              <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-lg p-6 space-y-4 shadow-2xl relative max-h-[80vh] flex flex-col">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <History className="w-5 h-5 text-amber-300" />
+                    <h3 className="font-serif text-lg text-slate-100">星の履歴</h3>
+                  </div>
+                  <button onClick={() => setShowHistory(false)} className="p-1 text-slate-400 hover:text-slate-100">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="overflow-y-auto space-y-3 flex-1 pr-1 custom-scrollbar">
+                  {history.length === 0 ? (
+                    <div className="text-center py-12 text-slate-500 text-xs font-serif">
+                      保存された履歴はありません。
+                    </div>
+                  ) : (
+                    history.map((item) => (
+                      <div key={item.id} className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 space-y-2">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-400 font-mono">{item.date}</span>
+                          <span className="text-amber-300 font-serif font-bold">{item.level.title}</span>
+                        </div>
+                        <p className="text-xs text-slate-300 font-light italic">「{item.message}」</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {history.length > 0 && (
+                  <button
+                    onClick={() => {
+                      setHistory([]);
+                      localStorage.removeItem('hoshi_mikuji_history');
+                    }}
+                    className="text-xs text-rose-400/80 hover:text-rose-300 underline text-center w-full pt-2"
+                  >
+                    履歴を削除
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* GUIDE MODAL */}
+          {showGuide && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+              <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-xl p-6 space-y-4 shadow-2xl relative max-h-[85vh] flex flex-col">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Sun className="w-5 h-5 text-amber-300" />
+                    <h3 className="font-serif text-lg text-slate-100">12星座一覧</h3>
+                  </div>
+                  <button onClick={() => setShowGuide(false)} className="p-1 text-slate-400 hover:text-slate-100">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="overflow-y-auto space-y-3 flex-1 pr-1 custom-scrollbar">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {ZODIAC_SIGNS.map((z) => (
+                      <div key={z.id} className="bg-slate-950/60 border border-slate-800 rounded-xl p-3 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{z.symbol}</span>
+                          <div>
+                            <div className="text-sm font-serif text-slate-200">{z.name}</div>
+                            <div className="text-[10px] text-slate-400 font-mono">{z.period}</div>
+                          </div>
+                        </div>
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-indigo-950 border border-indigo-500/30 text-indigo-300">
+                          {z.element}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Footer */}
+          <footer className="relative z-10 text-center py-6 text-slate-600 text-[11px] font-serif border-t border-slate-900">
+            <p>© Celestial Star Mikuji - 夜空の星々と繋がるひととき</p>
+          </footer>
+        </div>
+      );
+    }
+
+    // Render React App
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
